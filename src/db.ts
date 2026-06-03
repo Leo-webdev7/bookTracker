@@ -7,17 +7,14 @@ if (!DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-// Use Neon serverless driver for Vercel, pg for local development
 const isVercel = !!process.env.VERCEL;
 
 let pool: Pool;
 
 if (isVercel) {
-  // For Vercel deployment, use Neon serverless driver
   const { neon } = require('@neondatabase/serverless');
   const sql = neon(DATABASE_URL);
   
-  // Create a wrapper that mimics pg Pool interface
   pool = {
     query: async (text: string, params?: unknown[]) => {
       const result = await sql(text, params);
@@ -33,7 +30,6 @@ if (isVercel) {
     end: async () => {},
   } as unknown as Pool;
 } else {
-  // For local development, use standard pg driver
   pool = new Pool({
     connectionString: DATABASE_URL,
   });
@@ -42,7 +38,9 @@ if (isVercel) {
 export async function initDb(): Promise<void> {
   const client = await pool.connect();
   try {
-    // Create tables with proper indexes for 10M records optimization
+    // Enable pg_trgm extension for trigram-based ILIKE indexing
+    await client.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+
     await client.query(`
       CREATE TABLE IF NOT EXISTS books (
         id          SERIAL PRIMARY KEY,
@@ -55,15 +53,16 @@ export async function initDb(): Promise<void> {
       )
     `);
 
-    // Create indexes for performance with 10M records
-    await client.query('CREATE INDEX IF NOT EXISTS idx_books_title ON books(title)');
-    await client.query('CREATE INDEX IF NOT EXISTS idx_books_author ON books(author)');
+    // B-tree indexes for exact lookups and sorting
     await client.query('CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn)');
     await client.query('CREATE INDEX IF NOT EXISTS idx_books_created_at ON books(created_at DESC)');
 
-    // Create GIN indexes for full-text search (bonus feature)
-    await client.query("CREATE INDEX IF NOT EXISTS idx_books_title_gin ON books USING GIN(to_tsvector('english', title))");
-    await client.query("CREATE INDEX IF NOT EXISTS idx_books_author_gin ON books USING GIN(to_tsvector('english', author))");
+    // Composite index for cursor-based pagination
+    await client.query('CREATE INDEX IF NOT EXISTS idx_books_created_id ON books(created_at DESC, id DESC)');
+
+    // Trigram indexes for fast partial matching with ILIKE '%term%'
+    await client.query('CREATE INDEX IF NOT EXISTS idx_books_title_trgm ON books USING GIN(title gin_trgm_ops)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_books_author_trgm ON books USING GIN(author gin_trgm_ops)');
   } finally {
     client.release();
   }

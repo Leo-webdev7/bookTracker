@@ -1,10 +1,12 @@
-import type { Book, BookInput, BooksResponse } from './types';
+import type { Book } from './types';
 
-// In development, use the proxy. In production, use the same origin
-const BASE = import.meta.env.DEV ? '/api/books' : '/api/books';
+export interface BooksResponse {
+  data: Book[];
+  nextCursor: string | null;
+}
 
-export async function createBook(data: BookInput): Promise<Book> {
-  const res = await fetch(BASE, {
+export async function createBook(data: Omit<Book, 'id' | 'created_at'>): Promise<Book> {
+  const res = await fetch('/api/books', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -15,15 +17,15 @@ export async function createBook(data: BookInput): Promise<Book> {
 }
 
 export async function listBooks(params?: {
-  page?: number;
   limit?: number;
   search?: string;
+  cursor?: string;
 }): Promise<BooksResponse> {
   const query = new URLSearchParams();
-  if (params?.page) query.set('page', String(params.page));
   if (params?.limit) query.set('limit', String(params.limit));
   if (params?.search) query.set('search', params.search);
-  const res = await fetch(`${BASE}?${query}`);
+  if (params?.cursor) query.set('cursor', params.cursor);
+  const res = await fetch(`/api/books?${query}`);
   if (!res.ok) throw new Error('Failed to fetch books');
   return res.json();
 }

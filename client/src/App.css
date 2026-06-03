@@ -138,3 +138,7 @@ button:disabled { background: #a5b4fc; cursor: not-allowed; }
   font-size: 0.9rem;
   color: #6b7280;
 }
+
+.pagination-info {
+  color: #6b7280;
+}

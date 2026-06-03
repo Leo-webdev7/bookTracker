@@ -15,15 +15,3 @@ export interface BookInput {
   pages: number;
   rating: number;
 }
-
-export interface Pagination {
-  page: number;
-  limit: number;
-  total: number;
-  totalPages: number;
-}
-
-export interface BooksResponse {
-  data: Book[];
-  pagination: Pagination;
-}
