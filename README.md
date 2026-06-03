@@ -2,13 +2,13 @@
 
 A full-stack application to track books read by users, built with React, TypeScript, Express, and PostgreSQL.
 
-![Book Tracker Screenshot](https://via.placeholder.com/800x400?text=Book+Tracker+App)
+**Live Demo**: https://book-tracker-gray-zeta.vercel.app
 
 ## Features
 
 - **Add Books** - Add new books with title, author, ISBN, pages, and rating (1-5 stars)
-- **List Books** - View all books with pagination
-- **Search** - Search books by title and author using PostgreSQL full-text search
+- **List Books** - View all books with cursor-based pagination
+- **Search** - Real-time search by title and author with partial matching (first character works)
 - **Validation** - Client-side and server-side validation with Zod
 - **Optimized** - Database indexes designed for 10M+ records performance
 
@@ -19,12 +19,14 @@ A full-stack application to track books read by users, built with React, TypeScr
 | Frontend | React 18, TypeScript, Vite |
 | Backend | Express, TypeScript |
 | Database | PostgreSQL 15 |
+| Hosting | Vercel (frontend + API) |
+| Database Host | Neon (serverless PostgreSQL) |
 | Testing | Vitest, Supertest |
 
 ## Prerequisites
 
 - **Node.js** 18 or higher
-- **PostgreSQL** 15 or higher (or Docker/Podman)
+- **PostgreSQL** 15 or higher (for local development)
 - **pgAdmin** (optional, for database management)
 
 ## Local Development Setup
@@ -128,10 +130,10 @@ To manage the database using pgAdmin:
 
 ## API Endpoints
 
-| Method | Endpoint | Description | Request Body |
-|--------|----------|-------------|--------------|
+| Method | Endpoint | Description | Request Body / Query |
+|--------|----------|-------------|----------------------|
 | `POST` | `/api/books` | Create a new book | `{ title, author, isbn, pages, rating }` |
-| `GET` | `/api/books` | List books with pagination | Query params: `page`, `limit`, `search` |
+| `GET` | `/api/books` | List books | Query: `limit`, `search`, `cursor` |
 | `GET` | `/api/books/:id` | Get a specific book | - |
 | `PUT` | `/api/books/:id` | Update a book | `{ title, author, isbn, pages, rating }` |
 | `DELETE` | `/api/books/:id` | Delete a book | - |
@@ -149,12 +151,37 @@ curl -X POST http://localhost:3001/api/books \
 **List books with search:**
 
 ```bash
-curl "http://localhost:3001/api/books?search=gatsby&page=1&limit=10"
+# Search by first character
+curl "http://localhost:3001/api/books?search=g&limit=10"
+
+# Paginate with cursor (from previous response's nextCursor)
+curl "http://localhost:3001/api/books?limit=10&cursor=eyJjcmVhdGVkX2F0IjoiM..."
+```
+
+**Response format:**
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "title": "The Great Gatsby",
+      "author": "F. Scott Fitzgerald",
+      "isbn": "9780743273565",
+      "pages": 180,
+      "rating": 5,
+      "created_at": "2026-06-03T17:37:01.005Z"
+    }
+  ],
+  "nextCursor": "eyJjcmVhdGVkX2F0IjoiM..."
+}
 ```
 
 ## Database Schema
 
 ```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
 CREATE TABLE books (
   id          SERIAL PRIMARY KEY,
   title       VARCHAR(500) NOT NULL,
@@ -165,23 +192,24 @@ CREATE TABLE books (
   created_at  TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Performance indexes for 10M+ records
-CREATE INDEX idx_books_title ON books(title);
-CREATE INDEX idx_books_author ON books(author);
+-- Indexes for exact lookups and sorting
 CREATE INDEX idx_books_isbn ON books(isbn);
 CREATE INDEX idx_books_created_at ON books(created_at DESC);
 
--- Full-text search indexes (bonus feature)
-CREATE INDEX idx_books_title_gin ON books USING GIN(to_tsvector('english', title));
-CREATE INDEX idx_books_author_gin ON books USING GIN(to_tsvector('english', author));
+-- Composite index for cursor-based pagination
+CREATE INDEX idx_books_created_id ON books(created_at DESC, id DESC);
+
+-- Trigram indexes for fast partial matching (ILIKE '%term%')
+CREATE INDEX idx_books_title_trgm ON books USING GIN(title gin_trgm_ops);
+CREATE INDEX idx_books_author_trgm ON books USING GIN(author gin_trgm_ops);
 ```
 
 ## Testing
 
-Run the automated test suite:
+Run the automated test suite (requires local PostgreSQL):
 
 ```bash
-npm test
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/booktracker" npm test
 ```
 
 Run tests in watch mode:
@@ -247,43 +275,53 @@ npm run test:watch
 ```
 booktracker/
 ├── api/
-│   └── index.ts          # Vercel serverless function
+│   └── index.ts              # Vercel serverless function
 ├── client/
+│   ├── public/
+│   │   └── favicon.svg       # Book icon favicon
 │   ├── src/
-│   │   ├── components/   # React components
-│   │   │   ├── AddBook.tsx
-│   │   │   └── BookList.tsx
-│   │   ├── api.ts        # API client functions
-│   │   ├── App.tsx       # Main app component
-│   │   ├── main.tsx      # Entry point
-│   │   └── types.ts      # TypeScript types
+│   │   ├── components/
+│   │   │   ├── AddBook.tsx   # Add book form
+│   │   │   └── BookList.tsx  # Book table display
+│   │   ├── api.ts            # API client functions
+│   │   ├── App.tsx           # Main app component
+│   │   ├── App.css           # Styles
+│   │   ├── main.tsx          # Entry point
+│   │   └── types.ts          # TypeScript types
 │   ├── index.html
 │   ├── package.json
 │   └── vite.config.ts
 ├── src/
 │   ├── routes/
-│   │   └── books.ts      # API routes
+│   │   └── books.ts          # API routes with cursor pagination
 │   ├── __tests__/
-│   │   └── books.test.ts # Automated tests
-│   ├── app.ts            # Express app setup
-│   ├── db.ts             # Database connection
-│   ├── server.ts         # Server entry point
-│   └── validation.ts     # Zod validation schemas
-├── .env.example          # Environment variables template
-├── package.json          # Backend dependencies
-├── tsconfig.json         # TypeScript config
-├── vercel.json           # Vercel deployment config
-└── vitest.config.ts      # Test configuration
+│   │   └── books.test.ts     # Automated tests
+│   ├── app.ts                # Express app setup
+│   ├── db.ts                 # Database connection + schema
+│   ├── server.ts             # Server entry point
+│   └── validation.ts         # Zod validation schemas
+├── .env.example              # Environment variables template
+├── package.json
+├── tsconfig.json
+├── vercel.json               # Vercel deployment config
+└── vitest.config.ts
 ```
 
 ## Performance Considerations
 
 The database is optimized for datasets up to 10 million records:
 
-- **B-tree indexes** on frequently queried columns (title, author, isbn, created_at)
-- **GIN indexes** for PostgreSQL full-text search on title and author
-- **Pagination** with configurable page size (max 100)
-- **Connection pooling** via pg Pool
+| Optimization | Purpose |
+|--------------|---------|
+| **pg_trgm extension** | Enables trigram-based indexes for partial string matching |
+| **GIN trigram indexes** | `ILIKE '%term%'` uses index instead of full table scan |
+| **Cursor-based pagination** | Constant-time pagination regardless of position (no OFFSET) |
+| **Composite index** | Supports both sorting and cursor navigation efficiently |
+| **Connection pooling** | pg Pool reuses database connections |
+
+### Why cursor-based pagination?
+
+Traditional `OFFSET` pagination reads and discards all previous rows. At page 100,000 with 10M records, this means reading 10M rows just to return 20. Cursor-based pagination uses `WHERE (created_at, id) < (cursor)` to jump directly to the next page, maintaining constant query time.
 
 ## License
 
