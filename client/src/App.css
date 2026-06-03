@@ -62,6 +62,12 @@ h1 {
   margin: 0.5rem 0;
 }
 
+.loading {
+  text-align: center;
+  color: #6b7280;
+  padding: 1rem;
+}
+
 button {
   background: #6366f1;
   color: #fff;
@@ -86,6 +92,12 @@ button:disabled { background: #a5b4fc; cursor: not-allowed; }
   border: 1px solid #d1d5db;
   border-radius: 4px;
   font-size: 1rem;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.2);
 }
 
 .empty {

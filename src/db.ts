@@ -7,9 +7,37 @@ if (!DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');
 }
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-});
+// Use Neon serverless driver for Vercel, pg for local development
+const isVercel = !!process.env.VERCEL;
+
+let pool: Pool;
+
+if (isVercel) {
+  // For Vercel deployment, use Neon serverless driver
+  const { neon } = require('@neondatabase/serverless');
+  const sql = neon(DATABASE_URL);
+  
+  // Create a wrapper that mimics pg Pool interface
+  pool = {
+    query: async (text: string, params?: unknown[]) => {
+      const result = await sql(text, params);
+      return { rows: result };
+    },
+    connect: async () => ({
+      query: async (text: string, params?: unknown[]) => {
+        const result = await sql(text, params);
+        return { rows: result };
+      },
+      release: () => {},
+    }),
+    end: async () => {},
+  } as unknown as Pool;
+} else {
+  // For local development, use standard pg driver
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+  });
+}
 
 export async function initDb(): Promise<void> {
   const client = await pool.connect();

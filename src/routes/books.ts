@@ -40,24 +40,22 @@ router.get('/', async (req: Request, res: Response) => {
 
   try {
     if (search) {
-      // Use full-text search for better performance with large datasets
+      const like = `%${search}%`;
       const countResult = await sql.query(
         `SELECT COUNT(*) as total
          FROM books
-         WHERE to_tsvector('english', title) @@ plainto_tsquery('english', $1)
-            OR to_tsvector('english', author) @@ plainto_tsquery('english', $1)`,
-        [search]
+         WHERE title ILIKE $1 OR author ILIKE $1`,
+        [like]
       );
       const total = parseInt(countResult.rows[0].total);
 
       const books = await sql.query(
         `SELECT *
          FROM books
-         WHERE to_tsvector('english', title) @@ plainto_tsquery('english', $1)
-            OR to_tsvector('english', author) @@ plainto_tsquery('english', $1)
+         WHERE title ILIKE $1 OR author ILIKE $1
          ORDER BY created_at DESC
          LIMIT $2 OFFSET $3`,
-        [search, limit, offset]
+        [like, limit, offset]
       );
 
       return res.json({
